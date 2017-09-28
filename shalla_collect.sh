@@ -241,7 +241,7 @@ echo "stub named.conf changes can be found in $zoneDir/stub_missing_zpnes.conf"
 #	allow-transfer { 172.17.1.122;};
 #	notify yes;
 #};
-"
+
 #for each domain file use a template to create required zone file 
 #increase the serial number of that zone file by 1 
 #place it in the dns-rpz zone directory and reload dnz-rpz (triggering a notification to all subscribers)
