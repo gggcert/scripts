@@ -5,6 +5,12 @@
 # VER:   0.4 20170924
 # 
 # Collect sbl lists from feed shalla
+#----------------------------------------------------------------------
+# retrive file only:
+# curl -L --retry 20 --retry-delay 2 -O https://raw.githubusercontent.com/gggcert/scripts/master/shalla_collect.sh
+# or clone all script repository 
+# git clone  https://github.com/gggcert/scripts.git .
+#-------------------------------------------------------------------------
 
 rootDir=$HOME/dnsrpz
 feedsDir=$rootDir/feeds
