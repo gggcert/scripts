@@ -2,10 +2,12 @@
 #
 # shalla_collect.sh
 # OWNER: Gilad Finkelstein
-# VER:   0.5 20170928
+# VER:   0.6 20171017
 # 
-# 0.5 	create helper stub for the named.conf on both dns and rpz servers with new zones
-#		cp the ready zone files into production
+# 0.6 	20171017 	add colors. service(crontab) un/install support . --clear to clean up
+#					Added a machinism to handle errors in feed BL entries such that we create what we can for that zone
+# 0.5 	20170928 	create helper stub for the named.conf on both dns and rpz servers with new zones
+#					cp the ready zone files into production
 # Collect sbl lists from feed shalla
 #----------------------------------------------------------------------
 # retrive file only:
@@ -13,7 +15,26 @@
 # or clone all script repository 
 # git clone  https://github.com/gggcert/scripts.git .
 #-------------------------------------------------------------------------
+#lets have some color in life 
 
+RESET=`tput sgr0`						# normal text $'\e[0m'                     
+BOLD=$(tput bold)                         # make colors bold/bright
+RED="$BOLD$(tput setaf 1)"                # bright red text
+GREEN=$(tput setaf 2)                     # dim green text
+fawn=$(tput setaf 3); beige="$fawn"       # dark yellow text
+YELLOW="$BOLD$fawn"                       # bright yellow text
+DARKBLUE=$(tput setaf 4)                  # dim blue text
+BLUE="$BOLD$DARKBLUE"                     # bright blue text
+purple=$(tput setaf 5); MAGENTA="$purple" # magenta text
+pink="$BOLD$purple"                       # bright magenta text
+darkcyan=$(tput setaf 6)                  # dim cyan text
+CYAN="$BOLD$darkcyan"                     # bright cyan text
+GRAY=$(tput setaf 7)                      # dim white text
+DARKGRAY="$BOLD"$(tput setaf 0)           # bold black = dark gray text
+WHITE="$BOLD$GRAY"                        # bright white text
+BLACK=`tput setaf 0`
+
+############
 rootDir=$HOME/dnsrpz
 feedsDir=$rootDir/feeds
 feedName=shalla
@@ -29,12 +50,25 @@ bindRootDir=/var/named # this is the default bind9 root location,run: grep direc
 declare -A MAP_ZONE_EXT_NAMES=( ["shalla"]="kuku1" ["surbl"]="kuku2")
 #some minimal varibale interactions
 if [ $# -eq 1 ] && [ $1 == "--version" ] ;then 
-	echo -e "$0 \nVersion: "$(grep '^# VER:' $0|awk '{print $3,$4}')
+	 
+	echo -e "$0 \nVersion: "${YELLOW}$(grep '^# VER:' $0|awk '{print $3,$4}')${RESET}
 	exit 0
 fi
 if [ $# -eq 1 ] && [ $1 == "--help" ] ;then 
-	echo -e "$0 [--help][--version]"
+	echo ${WHITE}
+	echo -e "$0 [--help][--version][--[un]install] [--clean]"
 	echo -e " Collect $feedName[aka ${MAP_ZONE_EXT_NAMES[$feedName]}] for subscriber $subscriber resulting zone files in $zoneDir"
+	echo ${RESET}
+	exit 0
+fi
+if [ $# -eq 1 ] && [ $1 == "--install" ] ;then 
+	echo -e " Install $0 as a service"
+	echo '1 * * * * root '$(readlink -m $0) '>>/var/log/rpzdns.log' >> /etc/crontab
+	exit 0
+fi
+
+if [ $# -eq 1 ] && [ $1 == "--uninstall" ] ;then 
+	echo -e " remove $0 service"
 	exit 0
 fi
 
@@ -44,7 +78,7 @@ feedUrl=http://www.shallalist.de/Downloads/shallalist.tar.gz
 #helper tools
 tarCmd=$(which tar) || tarCmd=/usr/bin/tar
 chownCmd=$(which chown) || chownCmd=/usr/bin/chown
-md5Cmd=$(which md5) || md5Cmd=/usr/bin/md5sum
+md5Cmd=$(which md5sum) || md5Cmd=/usr/bin/md5sum
 httpget=$(which wget) || httpget=/usr/bin/wget
 httpget2=$(which curl) || httpget2=/usr/bin/curl
 pid=$$
@@ -90,14 +124,25 @@ workdir="/tmp/$feedName"
 #some feeds use different directory structure so lets be flexible here 
 feedworkingdir=$workdir
 [ $feedName == "shalla" ] && feedworkingdir=$workdir/BL
+if [ $# -eq 1 ] && [ $1 == "--clean" ] ;then 
+	echo -e " Cleaning all files and logs [ $workdir $feedsDir $zoneDir ] "
+	now=$(date +%s)
+	[ -d $workdir ] && mv $workdir $workdir.$now
+	[ -d $feedsDir ] && mv $feedsDir $feedsDir.$now
+	[ -d $zoneDir ] && mv $zoneDir $zoneDir.$now
+	
+	exit 0
+fi
 
-[ ! -d $workdir ] &&  mkdir -p $workdir
+[ ! -d $feedworkingdir ] &&  mkdir -p $feedworkingdir
 [ ! -d $feedsDir ] && mkdir -p $feedsDir
 cd $workdir  #/tmp/shalla/
 #implement caching if file is not older tnen X days avoid the need to retrive it from server 
 needNewVersion=1
 #by default we download new versions of the list but lets see if there is any change first
+echo ${DARKGRAY}
 $httpget2 -o $workdir/$feedFile.md5 $feedUrl.md5
+echo ${RESET}
 if [ -e $workdir/$feedFile ]; then
     #compare web hash to local existing file
     $md5Cmd --status -c $feedFile.md5
@@ -113,7 +158,9 @@ if [ $needNewVersion -eq 1 ]; then
 	[ -d $feedworkingdir ] && echo "Old blacklist directory found in $feedworkingdir. Deleted!" && rm -rf $feedworkingdir
 	#fetch bl file
 	echo "Fetch fresh BL file from $feedName,stand by"
+	echo ${DARKGRAY}
 	$httpget $feedUrl -a $feedLog -O $workdir/$feedFile || { echo "Unable to download $feedFile." && exit 1 ; }
+	echo ${RESET}
     #Check the status
     $md5Cmd --status -c $feedFile.md5
 	#MD5 match?  Then commit.
@@ -127,7 +174,8 @@ fi
 # Note: There is no reason to use all categories unless this is exactly
 #       what you intend to block. Make sure that only the categories you
 #       are going publish with rpz are used.
-CATEGORIES="adv aggressive spyware"
+#CATEGORIES="adv aggressive spyware hacking "
+CATEGORIES="adv aggressive spyware hacking  redirector warez"
 #CATEGORIES="adv aggressive automobile/cars automobile/bikes automobile/planes automobile/boats chat dating downloads drugs dynamic finance/banking finance/insurance finance/other finance/moneylending finance/realestate forum gamble hacking hobby/cooking hobby/games hobby/pets hospitals imagehosting isp jobsearch models movies music news podcasts politcs porn recreation/humor recreation/sports recreation/travel recreation/wellness redirector religion ringtones science/astronomy science/chemistry searchengines sex/lingerie shopping socialnet spyware tracker updatesites violence warez weapons webmail webphone webradio webtv" 
 
 echo "Creating diff files.while updating the lists with the fresh lists"
@@ -157,7 +205,7 @@ for cat in $CATEGORIES ;do
 	#fi
 done
 #we should probably also implement a common categorization between different feeds so everyone understands for a given zone name what it is
-declare -A CLASSIFICATION=( ["drugs"]="illegal" ["porn"]="adults" ["remotecontrol"]="backdoors" ["sex/education"]="adults" ["sex/lingerie"]="adults" ["spyware"]="spyware" ["warez"]="illegal" )
+declare -A CLASSIFICATION=( ["drugs"]="illegal" ["porn"]="adults" ["remotecontrol"]="backdoors" ["sex/education"]="adults" ["sex/lingerie"]="adults" ["spyware"]="spyware" ["warez"]="illegal" ["hacking"]="illegal"  )
 #keep track of the zone state build 0-initiate 1-header created ....
 declare -A CLASSTYPESTATE=( ["illegal"]=0 ["adults"]=0 ["backdoors"]=0 ["spyware"]=0 ["other"]=0 )
 #this is the default tempolate TBD: different subscribers and/or times will require diffrernt default actions maybe even at the zone level
@@ -199,7 +247,7 @@ for cat in $CATEGORIES ;do
 			#get current serial
 			currentSerial=$(head -8 $zoneFile |sed -n 's/.*\(20[0-9]\{6\}[0-9]\{2\}\).*/\1/p') # e.g. 2017091000
 			currentSerialDate=${currentSerial::-2} # 20170910
-			if [ "$currentSerialDate" -eq "$serialDate" ] ;then #same day update
+			if [ $currentSerialDate -eq $serialDate ] ;then #same day update
 				currentSerialSerial=${currentSerial: -2}
 				newSerial=$((10#$currentSerialSerial + 1)) # force decimal representation, increment
 				serial="${currentSerialDate}$(printf '%02d' $newSerial )" # format for 2 digits
@@ -223,18 +271,30 @@ for cat in $CATEGORIES ;do
 done
 #set -x
 validZoneNames=''
-for zf in $(ls $zoneDir|grep -v '.conf$') ;do
-	echo "checking zone $zoneDir/$zf"
+for zf in $(ls $zoneDir|grep -v '.bad$'|grep -v '.conf$') ;do
 	#go over all created zone files and validate zone file integrity 
 	zn=$(grep '^$ORIGIN' $zoneDir/$zf|awk '{print $2}')
+	echo "checking zone [named-checkzone $zn $zoneDir/$zf]"
+	echo ${DARKGRAY}
 	named-checkzone $zn $zoneDir/$zf
+	# named-checkzone $zn $zoneDir/$zf|grep  $zf:| sed s/.*$zf://g|cut -d: -f1 -> get the line number of the error
 	# if check fails move it aside and do not attempt to load it in the next step 
 	if [ $? -ne 0 ]  ;then 
+		echo ${RESET}
 		echo "something is bad with the zone please check it manually,file moved to $zoneDir/$zf.bad"  
-		mv $zoneDir/$zf $zoneDir/$zf.bad
+		#remove bad lines so we can have something, report admin about the problem so he can investigate the feed qulity
+		errLineNums=$(named-checkzone $zn $zoneDir/$zf|grep  $zf:| sed "s/.*$zf:\([0-9]*\):.*/\1d;/g"|xargs)
+		#echo $errLineNums
+		sed -i.bad -e "$errLineNums" $zoneDir/$zf
+		echo "Re-checking zone [named-checkzone $zn $zoneDir/$zf] . DONT IGNORE THE BAD FILE !!!"
+		echo ${DARKGRAY}
+		named-checkzone $zn $zoneDir/$zf
+		[ $? -eq 0 ] && validZoneNames+=" $zn"
+		#mv $zoneDir/$zf $zoneDir/$zf.bad
 	else
 		validZoneNames+=" $zn"
 	fi
+	echo ${RESET}
 done
 echo "Processing the feed had finished all valid zone files can be found in $zoneDir/$zf"
 
@@ -289,10 +349,41 @@ echo "stub named.conf changes can be found in $bindConf $rpzConf"
 [ ! -d $bindRootDir ] && echo "Are you sure we are running on the rpz named(bind) dns server? I failed to find $bindRootDir" && exit 1
 # check if new zone exists in /etc/named.conf if not add it to the stub (so someone can manually add it after a review)
 # if it does exists cpy the zone to /var/named/data/ 
-
+echo #reload RPZ dns so zones sends notifications to salves for update"
+systemctl reload named
 echo "Zone files updated and should be already synced with DNS server [ check the log in /var/named/data/named.log]"
+
+echo ${DARKGRAY}
+echo "------"
 tail  /var/named/data/named.log
+echo "------"
+echo ${RESET}
 
+#reading raw zone file on slave can be done using the following command 
+#named-compilezone -f raw -F text -o /tmp/x perfume.example.com /var/named/slaves/perfume.example.com
 
+#STIG protection 
+#generate stig keys (use the sbscriber name in the key name) which are generated in directory where you run the cmd e.g.  Kcert.tsigkey.+157+28782.key & Kcert.tsigkey.+157+28782.private
+#dnssec-keygen -a HMAC-MD5 -b 128 -n HOST cert.tsigkey
 
+# on RPZ master /etc/named.conf:
+#add acl for allowed zone transfer servers (currently only our own dns bind) in prod either we use the same key for everyone or different keys for different subscribers 
+#acl prodAcl {
+#    172.17.1.122;
+#};
+#key "cert.tisigkey" {
+#    algorithm hmac-md5;
+#    secret "XTdsJPcWCGOFxB76CjTzCA==";
+#};
+# define which servers should be communicated with stig keys
+#on RPZ(.123) define DNS slave(1.122) as being required to communicate using a key
+#server 172.17.1.122 {
+#    keys { "cert.tsigkey"; };
+#};
+#on  DNS slave(1.122) deinf RPZ (1.123) as being required to communicate using a key 
+#server 172.17.1.123 {
+#    keys { "cert.tsigkey"; };
+#};
+#in the zone block  itself use the key command to force the zone transfer to use the keys
+#allow-transfer {  key cert.tisigkey; };
 exit 0
