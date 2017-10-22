@@ -69,6 +69,7 @@ fi
 
 if [ $# -eq 1 ] && [ $1 == "--uninstall" ] ;then 
 	echo -e " remove $0 service"
+	sed -i  /$(basename $0)/s/^/#/g /etc/crontab
 	exit 0
 fi
 
