@@ -62,8 +62,8 @@ while true; do
 		;;
 	--ip)
 		shift; # The arg is next in position args
-		if [ -f $1 ] ;then
-			ipList=$(cat $1|xargs)
+		if [ -f "$1" ] ;then
+			ipList=$(cat "$1"|tr -d '\r' |xargs)
 		else
 			ipList=${1//,/ } #convert list of comma seperated ips to a space delimited list 
 		fi
