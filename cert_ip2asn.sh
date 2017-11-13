@@ -4,6 +4,8 @@
 # OWNER: Gilad Finkelstein
 # VER:   0.6 20171031
 #
+# 0.2   20171113        
+#		support differents services to get simillar as2ip info
 # 0.1   20171031        
 #		use ip2asn service to generate a csv output list 
 #----------------------------------------------------------------------
@@ -17,7 +19,6 @@ if [ -z "$json2csv" ] ; then
 	curl -L $gitFile  |tar xvz --strip=1 && mv json2csv /usr/local/bin/
 	json2csv=/usr/local/bin/json2csv
 fi 
-serviceUrl=https://api.iptoasn.com/v1/as/ip  
 #ip=132.70.196.53
  
 #lets have some color in life
@@ -39,12 +40,14 @@ WHITE="$BOLD$GRAY"                        # bright white text
 BLACK=`tput setaf 0`
 
 csvFields=announced,as_country_code,as_description,as_number,ip
+defService=as2ip #default serverice as2ip (other options are cymru using dig and he using scraping of IL only db )
 ipList=''
+ipArg=''
 # Call getopt to validate the provided input.
-options=$(getopt -o hvk: --longoptions  help,ip:,version -- "$@")
+options=$(getopt -o hvk:s: --longoptions  help,ip:,service:,version -- "$@")
 [ $? -eq 0 ] || {
-	echo "Incorrect options provided"
-	return 1
+	echo "Incorrect options provided [$options]"
+	exit 1
 }
 eval set -- "$options"
 while true; do
@@ -54,6 +57,7 @@ while true; do
 		echo -e ${WHITE}"OPTIONS"${RESET}
 		echo -e ${WHITE}"	--ip	comma seperated list of ip's or a file that contains lines of ips" ${RESET}
 		echo -e ${WHITE}"	-k	csv fields output{default:$csvFields}" ${RESET}
+		echo -e ${WHITE}"	--service	as2ip|cymru|he {default:$defService}" ${RESET}
 		echo -e ${WHITE}"	--help			show this help" ${RESET}
 		echo -e ${WHITE}"	--version		show version" ${RESET}
 		echo -e ${WHITE}"EXAMPLE"${RESET}
@@ -62,10 +66,20 @@ while true; do
 		;;
 	--ip)
 		shift; # The arg is next in position args
-		if [ -f "$1" ] ;then
-			ipList=$(cat "$1"|tr -d '\r' |xargs)
+		ipArg=$1
+		if [ -f "$ipArg" ] ;then
+			ipList=$(cat "$ipArg"|tr -d '\r' |xargs)
 		else
-			ipList=${1//,/ } #convert list of comma seperated ips to a space delimited list 
+			ipList=${ipArg//,/ } #convert list of comma seperated ips to a space delimited list 
+		fi
+		;;
+	--service | -s )
+		shift; # The arg is next in position args
+		if [[ "$1" =~ ^(as2ip|cymru|he)$ ]]; then
+			defService=$1
+		else
+			echo "Sorry we do not have such service avilable [$1], try again"
+			$0 --help
 		fi
 		;;
 	-k)
@@ -86,7 +100,24 @@ done
 #[ -z "$ipList" ] && echo -e ${WHITE}"--ip must be provided "${RESET} && exit 1
 # TODO use the same service tsv file data set that contains all records and find if a given ip is within a range of a line
 #https://iptoasn.com/data/ip2asn-combined.tsv.gz
-for ip in $ipList ;do
-	curl -Ls $serviceUrl/$ip | $json2csv -k $csvFields
-done
-echo ${RESET}
+if [ $defService == "as2ip" ] ; then 
+	serviceUrl=https://api.iptoasn.com/v1/as/ip  
+	for ip in $ipList ;do
+		curl -Ls $serviceUrl/$ip | $json2csv -k $csvFields
+	done
+elif [ $defService == "he" ] ; then 
+	#execute the python code if exists
+	$(dirname $0)/cert_ip2asn.py --ip $ipArg
+elif [ $defService == "cymru" ] ; then 
+	#try using the 
+	serviceUrl=origin.asn.cymru.com
+	#see if .cache_ip2asn file exist it contains some AS to name mapping we can use 
+	cacheFile=$(dirname $0)/.cache_ip2asn
+	[ -f $cacheFile ] && echo "grep AS in the file "
+	for ip in $ipList ;do
+		rIp=$(echo "$ip"|tr '.' '\n'|tac|tr '\n' '.')
+		dig +short $rIp$serviceUrl TXT | sed "s/^\"/\"$ip\| /g"   #add the ip to the begining of each replay line
+	done
+	#set +x
+fi
+#echo ${RESET}
